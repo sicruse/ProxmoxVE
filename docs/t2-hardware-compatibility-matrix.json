@@ -1,0 +1,259 @@
+{
+  "hardware_compatibility": {
+    "version": "1.0",
+    "last_updated": "2025-09-01",
+    "macbook_pro": {
+      "13_inch": {
+        "2018": {
+          "model": "A1989",
+          "identifier": "MacBookPro15,2",
+          "status": "fully_supported",
+          "tested": true,
+          "notes": "All features working including fan control",
+          "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+          "kernel_compatibility": "6.8.12+",
+          "fan_control": "full_support",
+          "community_tested": true
+        },
+        "2019": {
+          "model": "A1989", 
+          "identifier": "MacBookPro15,2",
+          "status": "fully_supported",
+          "tested": true,
+          "notes": "All features working including fan control",
+          "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+          "kernel_compatibility": "6.8.12+",
+          "fan_control": "full_support",
+          "community_tested": true
+        },
+        "2020": {
+          "model": "A2251",
+          "identifier": "MacBookPro16,2", 
+          "status": "fully_supported",
+          "tested": true,
+          "notes": "All features working including fan control",
+          "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+          "kernel_compatibility": "6.8.12+",
+          "fan_control": "full_support",
+          "community_tested": true
+        }
+      },
+      "15_inch": {
+        "2018": {
+          "model": "A1990",
+          "identifier": "MacBookPro15,1",
+          "status": "fully_supported", 
+          "tested": true,
+          "notes": "All features working including fan control",
+          "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+          "kernel_compatibility": "6.8.12+",
+          "fan_control": "full_support",
+          "community_tested": true
+        },
+        "2019": {
+          "model": "A1990",
+          "identifier": "MacBookPro15,1",
+          "status": "fully_supported",
+          "tested": true, 
+          "notes": "All features working including fan control",
+          "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+          "kernel_compatibility": "6.8.12+",
+          "fan_control": "full_support",
+          "community_tested": true
+        }
+      },
+      "16_inch": {
+        "2019": {
+          "model": "A2141",
+          "identifier": "MacBookPro16,1",
+          "status": "fully_supported",
+          "tested": true,
+          "notes": "All features working including fan control",
+          "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+          "kernel_compatibility": "6.8.12+",
+          "fan_control": "full_support",
+          "community_tested": true
+        },
+        "2020": {
+          "model": "A2141", 
+          "identifier": "MacBookPro16,1",
+          "status": "fully_supported",
+          "tested": true,
+          "notes": "All features working including fan control",
+          "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+          "kernel_compatibility": "6.8.12+",
+          "fan_control": "full_support",
+          "community_tested": true
+        }
+      }
+    },
+    "mac_mini": {
+      "2018": {
+        "model": "A1993",
+        "identifier": "Macmini8,1", 
+        "status": "fully_supported",
+        "tested": true,
+        "notes": "All features working including fan control",
+        "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+        "kernel_compatibility": "6.8.12+",
+        "fan_control": "full_support",
+        "community_tested": true
+      }
+    },
+    "imac": {
+      "21_inch": {
+        "2019": {
+          "model": "A2116",
+          "identifier": "iMac19,2",
+          "status": "fully_supported", 
+          "tested": true,
+          "notes": "All features working including fan control",
+          "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+          "kernel_compatibility": "6.8.12+",
+          "fan_control": "full_support",
+          "community_tested": true
+        }
+      },
+      "27_inch": {
+        "2019": {
+          "model": "A2115",
+          "identifier": "iMac19,1",
+          "status": "fully_supported",
+          "tested": true,
+          "notes": "All features working including fan control",
+          "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+          "kernel_compatibility": "6.8.12+",
+          "fan_control": "full_support",
+          "community_tested": true
+        },
+        "2020": {
+          "model": "A2115",
+          "identifier": "iMac20,1", 
+          "status": "fully_supported",
+          "tested": true,
+          "notes": "All features working including fan control",
+          "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+          "kernel_compatibility": "6.8.12+",
+          "fan_control": "full_support",
+          "community_tested": true
+        }
+      }
+    },
+    "imac_pro": {
+      "2017": {
+        "model": "A1862",
+        "identifier": "iMacPro1,1",
+        "status": "fully_supported",
+        "tested": true,
+        "notes": "All features working including fan control",
+        "detection_methods": ["dmi", "smc", "acpi", "t2_devices"],
+        "kernel_compatibility": "6.8.12+",
+        "fan_control": "full_support",
+        "community_tested": true
+      }
+    },
+    "mac_studio": {
+      "2022_m1": {
+        "model": "A2615",
+        "identifier": "MacStudio1,1",
+        "status": "not_supported",
+        "tested": false,
+        "notes": "Apple Silicon M1 - requires different kernel approach",
+        "detection_methods": ["dmi"],
+        "kernel_compatibility": "none",
+        "fan_control": "not_supported",
+        "community_tested": false
+      },
+      "2022_m2": {
+        "model": "A2615", 
+        "identifier": "MacStudio1,2",
+        "status": "not_supported",
+        "tested": false,
+        "notes": "Apple Silicon M2 - requires different kernel approach",
+        "detection_methods": ["dmi"],
+        "kernel_compatibility": "none",
+        "fan_control": "not_supported",
+        "community_tested": false
+      }
+    },
+    "mac_pro": {
+      "2019": {
+        "model": "A1991",
+        "identifier": "MacPro7,1",
+        "status": "limited_support",
+        "tested": false,
+        "notes": "Limited T2 functionality - community testing needed",
+        "detection_methods": ["dmi", "smc"],
+        "kernel_compatibility": "unknown",
+        "fan_control": "unknown",
+        "community_tested": false
+      }
+    }
+  },
+  "detection_methods": {
+    "dmi": {
+      "name": "DMI/SMBIOS Detection",
+      "description": "System manufacturer and product identification",
+      "reliability": "high",
+      "fallback_capable": true
+    },
+    "smc": {
+      "name": "Apple SMC Detection", 
+      "description": "System Management Controller detection",
+      "reliability": "high",
+      "fallback_capable": true
+    },
+    "acpi": {
+      "name": "ACPI Detection",
+      "description": "Apple-specific ACPI device detection", 
+      "reliability": "medium",
+      "fallback_capable": true
+    },
+    "t2_devices": {
+      "name": "T2-Specific Device Detection",
+      "description": "T2 security chip specific device detection",
+      "reliability": "high",
+      "fallback_capable": false
+    }
+  },
+  "status_definitions": {
+    "fully_supported": {
+      "description": "All features tested and working",
+      "install_recommended": true,
+      "community_support": "full"
+    },
+    "limited_support": {
+      "description": "Some features may not work as expected",
+      "install_recommended": false,
+      "community_support": "limited"
+    },
+    "not_supported": {
+      "description": "Hardware not compatible with T2 kernel",
+      "install_recommended": false,
+      "community_support": "none"
+    },
+    "untested": {
+      "description": "Hardware may work but has not been tested",
+      "install_recommended": false,
+      "community_support": "community"
+    }
+  },
+  "kernel_requirements": {
+    "minimum_version": "6.8.0",
+    "recommended_version": "6.8.12+", 
+    "proxmoxve_version": "8.0+",
+    "additional_packages": [
+      "lm-sensors",
+      "t2fanrd",
+      "linux-firmware"
+    ]
+  },
+  "testing_criteria": {
+    "hardware_detection": "All detection methods successful",
+    "kernel_installation": "Clean installation without errors",
+    "boot_functionality": "System boots successfully with T2 kernel",
+    "fan_control": "Fan control daemon starts and functions",
+    "sensor_monitoring": "Temperature and fan sensors readable",
+    "system_stability": "24+ hour stability testing completed"
+  }
+}
