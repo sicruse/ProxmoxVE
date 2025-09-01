@@ -25,6 +25,257 @@ catch_errors
 # Get system information
 KERNEL_ON=$(uname -r)
 HOSTNAME=$(hostname)
+
+# Configuration for GitHub API integration
+readonly GITHUB_API_BASE="https://api.github.com"
+readonly T2_REPO="AdityaGarg8/pve-edge-kernel-t2"
+readonly CACHE_DIR="/tmp/t2mac-cache"
+readonly CACHE_TTL=3600  # 1 hour cache TTL
+readonly MAX_RETRIES=3
+readonly INITIAL_RETRY_DELAY=5
+
+##
+# init_api_cache - Initialize GitHub API cache directory
+#
+# Description:
+#   Creates cache directory and cleans old cache files to prevent
+#   disk space issues from accumulating cache data.
+##
+init_api_cache() {
+    mkdir -p "$CACHE_DIR"
+    # Clean old cache files (older than 24 hours)
+    find "$CACHE_DIR" -type f -mtime +1 -delete 2>/dev/null || true
+}
+
+##
+# validate_version - Validate version string format
+#
+# Description:
+#   Validates that a version string follows the expected semantic versioning
+#   format for T2 kernel versions (X.Y.Z or X.Y.Z-N)
+#
+# Parameters:
+#   $1: Version string to validate
+#
+# Returns:
+#   Exit 0: Version format is valid
+#   Exit 1: Invalid version format
+#
+# Examples:
+#   validate_version "6.8.12-2" && echo "Valid version"
+##
+validate_version() {
+    local version="$1"
+    
+    if [[ -z "$version" ]]; then
+        return 1
+    fi
+    
+    # Allow version format: X.Y.Z or X.Y.Z-N (require at least X.Y.Z)
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+##
+# return_offline_guidance - Provide offline operation guidance
+#
+# Description:
+#   Displays comprehensive guidance for users when network connectivity
+#   issues prevent normal operation, with specific troubleshooting steps.
+##
+return_offline_guidance() {
+    cat << 'EOF'
+🌐 Network Connectivity Issues Detected
+
+The T2 kernel manager requires internet access to:
+• Check for latest kernel versions
+• Download kernel packages  
+• Validate package integrity
+
+Current network status appears limited. You can:
+
+1. Check Network Connection:
+   • Verify internet connectivity: ping github.com
+   • Check firewall settings
+   • Confirm DNS resolution
+
+2. Offline Operation Options:
+   • Use manual kernel package if available
+   • Retry operation when network is restored
+   • Check cached version information
+
+3. Alternative Download Methods:
+   • Download packages manually from GitHub
+   • Use local mirror if configured
+   • Contact system administrator for assistance
+
+GitHub Repository: https://github.com/AdityaGarg8/pve-edge-kernel-t2
+EOF
+}
+
+##
+# github_api_get - GitHub API client with rate limiting and caching
+#
+# Description:
+#   Makes GitHub API requests with intelligent retry logic, rate limiting
+#   protection, caching support, and graceful fallback to cached data.
+#
+# Parameters:
+#   $1: API endpoint path (e.g., "/repos/owner/repo/releases/latest")
+#
+# Returns:
+#   String: API response JSON
+#   Exit 0: Success (fresh or cached data)
+#   Exit 1: All retries failed and no cached data available
+##
+github_api_get() {
+    local endpoint="$1"
+    local cache_file="$CACHE_DIR/$(echo "$endpoint" | sed 's|/|_|g')"
+    local url="${GITHUB_API_BASE}${endpoint}"
+    
+    # Check cache first
+    local file_mtime=0
+    if [ -f "$cache_file" ]; then
+        if stat -c %Y "$cache_file" >/dev/null 2>&1; then
+            # GNU stat (Linux)
+            file_mtime=$(stat -c %Y "$cache_file")
+        else
+            # BSD stat (macOS)
+            file_mtime=$(stat -f %m "$cache_file" 2>/dev/null || echo 0)
+        fi
+    fi
+    
+    if [ -f "$cache_file" ] && [ $(($(date +%s) - file_mtime)) -lt $CACHE_TTL ]; then
+        msg_info "Using cached GitHub API data"
+        cat "$cache_file"
+        return 0
+    fi
+    
+    # Make API request with rate limiting protection
+    local attempt=1
+    local retry_delay=$INITIAL_RETRY_DELAY
+    
+    while [ $attempt -le $MAX_RETRIES ]; do
+        msg_info "Fetching from GitHub API (attempt $attempt/$MAX_RETRIES)"
+        
+        local response
+        local http_code
+        local temp_response
+        
+        # Make request with timeout and user agent
+        temp_response=$(curl -s -w "\n%{http_code}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "User-Agent: T2MacManager/1.0 (ProxmoxVE)" \
+            --connect-timeout 10 \
+            --max-time 30 \
+            "$url" 2>/dev/null)
+        
+        if [ $? -eq 0 ]; then
+            http_code=$(echo "$temp_response" | tail -n1)
+            response=$(echo "$temp_response" | head -n -1)
+        else
+            http_code="000"
+            response=""
+        fi
+        
+        case "$http_code" in
+            200)
+                # Success - cache and return
+                echo "$response" > "$cache_file"
+                echo "$response"
+                return 0
+                ;;
+            403)
+                # Rate limiting - check for reset time in headers
+                msg_warn "GitHub API rate limited (HTTP 403)"
+                local wait_time=60  # Default wait time
+                if [ $attempt -lt $MAX_RETRIES ]; then
+                    msg_info "Waiting ${wait_time}s before retry due to rate limiting"
+                    sleep $wait_time
+                fi
+                ;;
+            404)
+                msg_error "GitHub repository or endpoint not found (HTTP 404)"
+                return 1
+                ;;
+            000)
+                msg_warn "Network connection failed (timeout or DNS issues)"
+                ;;
+            *)
+                msg_warn "GitHub API returned HTTP $http_code"
+                ;;
+        esac
+        
+        if [ $attempt -lt $MAX_RETRIES ]; then
+            msg_info "Waiting ${retry_delay}s before retry"
+            sleep $retry_delay
+            retry_delay=$((retry_delay * 2))  # Exponential backoff
+        fi
+        
+        ((attempt++))
+    done
+    
+    # All retries failed - check for cached fallback
+    if [ -f "$cache_file" ]; then
+        msg_warn "GitHub API unavailable, using cached data (may be stale)"
+        cat "$cache_file"
+        return 0
+    fi
+    
+    msg_error "GitHub API unavailable and no cached data available"
+    return_offline_guidance
+    return 1
+}
+
+##
+# get_latest_t2_version - Retrieve latest T2 kernel version from GitHub
+#
+# Description:
+#   Fetches the latest release version from AdityaGarg8/pve-edge-kernel-t2
+#   with enhanced rate limiting protection, caching, and error handling.
+#
+# Returns:
+#   String: Latest version number (e.g., "6.8.12-2")
+#   Exit 0: Success
+#   Exit 1: Network error or API failure
+#
+# Examples:
+#   latest_version=$(get_latest_t2_version)
+#   if [ $? -eq 0 ]; then msg_info "Latest: $latest_version"; fi
+##
+get_latest_t2_version() {
+    init_api_cache
+    
+    msg_info "Checking for latest T2 kernel version"
+    
+    local api_response
+    if ! api_response=$(github_api_get "/repos/$T2_REPO/releases/latest"); then
+        # Offline fallback already handled by github_api_get
+        return 1
+    fi
+    
+    # Parse version from JSON response
+    local latest_version
+    latest_version=$(echo "$api_response" | grep '"tag_name"' | cut -d '"' -f 4 | sed 's/^v//')
+    
+    if [ -z "$latest_version" ]; then
+        msg_error "Unable to parse version information from GitHub API"
+        return_offline_guidance
+        return 1
+    fi
+    
+    if ! validate_version "$latest_version"; then
+        msg_error "Invalid version format received: $latest_version"
+        return 1
+    fi
+    
+    msg_ok "Latest T2 kernel version: $latest_version"
+    echo "$latest_version"
+    return 0
+}
 ##
 # detect_mac_hardware_enhanced - Enhanced hardware detection with comprehensive reporting
 #
@@ -232,442 +483,6 @@ if [ $? -ne 0 ]; then
     msg_warn "Could not fetch latest version, using fallback"
     LATEST_T2_VER="unknown"
 fi
-
-##
-# get_latest_t2_version - Retrieve latest T2 kernel version from GitHub
-#
-# Description:
-#   Fetches the latest release version from AdityaGarg8/pve-edge-kernel-t2
-#   with enhanced rate limiting protection, caching, and error handling.
-#
-# Returns:
-#   String: Latest version number (e.g., "6.8.12-2")
-#   Exit 0: Success
-#   Exit 1: Network error or API failure
-#
-# Examples:
-#   latest_version=$(get_latest_t2_version)
-#   if [ $? -eq 0 ]; then msg_info "Latest: $latest_version"; fi
-##
-get_latest_t2_version() {
-    init_api_cache
-    
-    msg_info "Checking for latest T2 kernel version"
-    
-    local api_response
-    if ! api_response=$(github_api_get "/repos/$T2_REPO/releases/latest"); then
-        # Offline fallback already handled by github_api_get
-        return 1
-    fi
-    
-    # Parse version from JSON response
-    local latest_version
-    latest_version=$(echo "$api_response" | grep '"tag_name"' | cut -d '"' -f 4 | sed 's/^v//')
-    
-    if [ -z "$latest_version" ]; then
-        msg_error "Unable to parse version information from GitHub API"
-        return_offline_guidance
-        return 1
-    fi
-    
-    if ! validate_version "$latest_version"; then
-        msg_error "Invalid version format received: $latest_version"
-        return 1
-    fi
-    
-    msg_ok "Latest T2 kernel version: $latest_version"
-    echo "$latest_version"
-    return 0
-}
-
-# Configuration for GitHub API integration
-readonly GITHUB_API_BASE="https://api.github.com"
-readonly T2_REPO="AdityaGarg8/pve-edge-kernel-t2"
-readonly CACHE_DIR="/tmp/t2mac-cache"
-readonly CACHE_TTL=3600  # 1 hour cache TTL
-readonly MAX_RETRIES=3
-readonly INITIAL_RETRY_DELAY=5
-
-##
-# init_api_cache - Initialize GitHub API cache directory
-#
-# Description:
-#   Creates cache directory and cleans old cache files to prevent
-#   disk space issues from accumulating cache data.
-##
-init_api_cache() {
-    mkdir -p "$CACHE_DIR"
-    # Clean old cache files (older than 24 hours)
-    find "$CACHE_DIR" -type f -mtime +1 -delete 2>/dev/null || true
-}
-
-##
-# github_api_get - GitHub API client with rate limiting and caching
-#
-# Description:
-#   Makes GitHub API requests with intelligent retry logic, rate limiting
-#   protection, caching support, and graceful fallback to cached data.
-#
-# Parameters:
-#   $1: API endpoint path (e.g., "/repos/owner/repo/releases/latest")
-#
-# Returns:
-#   String: API response JSON
-#   Exit 0: Success (fresh or cached data)
-#   Exit 1: All retries failed and no cached data available
-##
-github_api_get() {
-    local endpoint="$1"
-    local cache_file="$CACHE_DIR/$(echo "$endpoint" | sed 's|/|_|g')"
-    local url="${GITHUB_API_BASE}${endpoint}"
-    
-    # Check cache first
-    local file_mtime=0
-    if [ -f "$cache_file" ]; then
-        if stat -c %Y "$cache_file" >/dev/null 2>&1; then
-            # GNU stat (Linux)
-            file_mtime=$(stat -c %Y "$cache_file")
-        else
-            # BSD stat (macOS)
-            file_mtime=$(stat -f %m "$cache_file" 2>/dev/null || echo 0)
-        fi
-    fi
-    
-    if [ -f "$cache_file" ] && [ $(($(date +%s) - file_mtime)) -lt $CACHE_TTL ]; then
-        msg_info "Using cached GitHub API data"
-        cat "$cache_file"
-        return 0
-    fi
-    
-    # Make API request with rate limiting protection
-    local attempt=1
-    local retry_delay=$INITIAL_RETRY_DELAY
-    
-    while [ $attempt -le $MAX_RETRIES ]; do
-        msg_info "Fetching from GitHub API (attempt $attempt/$MAX_RETRIES)"
-        
-        local response
-        local http_code
-        local temp_response
-        
-        # Make request with timeout and user agent
-        temp_response=$(curl -s -w "\n%{http_code}" \
-            -H "Accept: application/vnd.github+json" \
-            -H "User-Agent: T2MacManager/1.0 (ProxmoxVE)" \
-            --connect-timeout 10 \
-            --max-time 30 \
-            "$url" 2>/dev/null)
-        
-        if [ $? -eq 0 ]; then
-            http_code=$(echo "$temp_response" | tail -n1)
-            response=$(echo "$temp_response" | head -n -1)
-        else
-            http_code="000"
-            response=""
-        fi
-        
-        case "$http_code" in
-            200)
-                # Success - cache and return
-                echo "$response" > "$cache_file"
-                echo "$response"
-                return 0
-                ;;
-            403)
-                # Rate limiting - check for reset time in headers
-                msg_warn "GitHub API rate limited (HTTP 403)"
-                local wait_time=60  # Default wait time
-                
-                # Try to get rate limit reset time from response headers
-                local reset_header=$(curl -I -s "$url" 2>/dev/null | grep -i "x-ratelimit-reset:" || true)
-                if [ -n "$reset_header" ]; then
-                    local reset_time=$(echo "$reset_header" | cut -d: -f2 | tr -d ' \r')
-                    if [ -n "$reset_time" ] && [ "$reset_time" -gt 0 ] 2>/dev/null; then
-                        wait_time=$((reset_time - $(date +%s)))
-                        if [ $wait_time -lt 0 ]; then
-                            wait_time=60
-                        elif [ $wait_time -gt 300 ]; then  # Cap at 5 minutes
-                            wait_time=300
-                        fi
-                    fi
-                fi
-                
-                msg_info "Waiting ${wait_time}s for rate limit reset..."
-                sleep $wait_time
-                continue
-                ;;
-            404)
-                msg_error "GitHub repository or endpoint not found: $url"
-                return 1
-                ;;
-            000)
-                msg_warn "Network connection failed (attempt $attempt/$MAX_RETRIES)"
-                ;;
-            *)
-                msg_warn "GitHub API request failed with HTTP $http_code (attempt $attempt/$MAX_RETRIES)"
-                ;;
-        esac
-        
-        # Wait before retry with exponential backoff
-        if [ $attempt -lt $MAX_RETRIES ]; then
-            msg_info "Waiting ${retry_delay}s before retry..."
-            sleep $retry_delay
-            retry_delay=$((retry_delay * 2))  # Exponential backoff
-        fi
-        
-        ((attempt++))
-    done
-    
-    # All retries failed - check for cached fallback
-    if [ -f "$cache_file" ]; then
-        msg_warn "GitHub API unavailable, using cached data (may be stale)"
-        cat "$cache_file"
-        return 0
-    fi
-    
-    msg_error "GitHub API unavailable and no cached data available"
-    return_offline_guidance
-    return 1
-}
-
-##
-# return_offline_guidance - Provide offline operation guidance
-#
-# Description:
-#   Displays comprehensive guidance for users when network connectivity
-#   issues prevent GitHub API access or package downloads.
-##
-return_offline_guidance() {
-    cat << 'EOF'
-🌐 Network Connectivity Issues Detected
-
-The T2 kernel manager requires internet access to:
-• Check for latest kernel versions
-• Download kernel packages  
-• Validate package integrity
-
-Current network status appears limited. You can:
-
-1. Check Network Connection:
-   • Verify internet connectivity: ping github.com
-   • Check firewall settings
-   • Confirm DNS resolution
-
-2. Offline Operation Options:
-   • Use manual kernel package if available
-   • Retry operation when network is restored
-   • Check cached version information
-
-3. Alternative Download Methods:
-   • Download packages manually from GitHub
-   • Use local mirror if configured
-   • Contact system administrator for assistance
-
-GitHub Repository: https://github.com/AdityaGarg8/pve-edge-kernel-t2
-EOF
-}
-
-# Function to check if current kernel is up to date
-is_kernel_up_to_date() {
-    # Extract version numbers for comparison
-    local current_version=$(echo "$KERNEL_ON" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-    local latest_version=$(echo "$LATEST_T2_VER" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-    
-    # If we couldn't extract versions properly, assume not up to date
-    if [ -z "$current_version" ] || [ -z "$latest_version" ]; then
-        return 1
-    fi
-    
-    # Compare major version
-    local current_major=$(echo "$current_version" | cut -d. -f1)
-    local latest_major=$(echo "$latest_version" | cut -d. -f1)
-    
-    if [ "$current_major" -lt "$latest_major" ]; then
-        return 1
-    elif [ "$current_major" -gt "$latest_major" ]; then
-        return 0
-    fi
-    
-    # Compare minor version
-    local current_minor=$(echo "$current_version" | cut -d. -f2)
-    local latest_minor=$(echo "$latest_version" | cut -d. -f2)
-    
-    if [ "$current_minor" -lt "$latest_minor" ]; then
-        return 1
-    elif [ "$current_minor" -gt "$latest_minor" ]; then
-        return 0
-    fi
-    
-    # Compare patch version
-    local current_patch=$(echo "$current_version" | cut -d. -f3)
-    local latest_patch=$(echo "$latest_version" | cut -d. -f3)
-    
-    if [ "$current_patch" -lt "$latest_patch" ]; then
-        return 1
-    fi
-    
-    # If we get here, current version is at least as new as latest
-    return 0
-}
-
-##
-# community_version_check - Community-integrated version checking
-#
-# Description:
-#   Performs version checking with community messaging patterns and
-#   graceful handling of network failures or API unavailability.
-##
-community_version_check() {
-    msg_info "Checking T2 kernel version status"
-    
-    local current_version latest_version
-    current_version=$(uname -r | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-    
-    if latest_version=$(get_latest_t2_version); then
-        if is_kernel_up_to_date; then
-            msg_ok "T2 kernel is up to date ($current_version)"
-        else
-            msg_info "T2 kernel update available: $current_version → $latest_version"
-        fi
-    else
-        msg_warn "Unable to check for updates - continuing with current kernel"
-    fi
-}
-
-##
-# command_exists - Check if a command is available in PATH
-#
-# Description:
-#   Tests whether a command or program is available in the system PATH.
-#   Used for dependency validation before executing operations.
-#
-# Parameters:
-#   $1: Command name to check
-#
-# Returns:
-#   Exit 0: Command exists and is executable
-#   Exit 1: Command not found or not executable
-#
-# Examples:
-#   command_exists "curl" && msg_ok "curl is available"
-##
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
-##
-# validate_community_dependencies - Validate required system tools
-#
-# Description:
-#   Validates that all required system tools are available before
-#   proceeding with T2 kernel management operations. Follows community
-#   standards for dependency checking.
-#
-# Returns:
-#   Exit 0: All required tools available
-#   Exit 1: Missing required tools
-#
-# Examples:
-#   validate_community_dependencies || exit 1
-##
-validate_community_dependencies() {
-    local required_tools=("curl" "dmidecode" "systemctl" "dpkg" "apt" "grep" "sed" "wget")
-    local missing_tools=()
-    
-    msg_info "Validating system dependencies..."
-    
-    for tool in "${required_tools[@]}"; do
-        if ! command_exists "$tool"; then
-            missing_tools+=("$tool")
-        fi
-    done
-    
-    if [ ${#missing_tools[@]} -gt 0 ]; then
-        msg_error "Missing required tools: ${missing_tools[*]}"
-        msg_info "Please install missing dependencies and retry"
-        return $EXIT_DEPENDENCY_ERROR
-    fi
-    
-    msg_ok "All required dependencies available"
-    return 0
-}
-
-# Community standard messaging functions are sourced from core.func
-
-##
-# validate_input - Sanitize user input to prevent command injection
-#
-# Description:
-#   Validates and sanitizes user input by removing dangerous characters
-#   and patterns that could lead to command injection attacks.
-#
-# Parameters:
-#   $1: Input string to validate
-#
-# Returns:
-#   String: Sanitized input
-#   Exit 1: Invalid or dangerous input detected
-#
-# Examples:
-#   safe_input=$(validate_input "$user_input")
-#   validate_input "$option" || { msg_error "Invalid input"; exit 1; }
-##
-validate_input() {
-    local input="$1"
-    
-    # Check for null or empty input
-    if [[ -z "$input" ]]; then
-        return 1
-    fi
-    
-    # Remove potentially dangerous characters
-    # Allow only alphanumeric, spaces, dashes, dots, and underscores
-    if [[ ! "$input" =~ ^[a-zA-Z0-9._\ -]+$ ]]; then
-        msg_error "Input contains invalid characters"
-        return 1
-    fi
-    
-    # Check for command injection patterns
-    if [[ "$input" =~ [\;\|\&\$\`\<\>] ]]; then
-        msg_error "Input contains potentially dangerous characters"
-        return 1
-    fi
-    
-    echo "$input"
-    return 0
-}
-
-##
-# validate_version - Validate version string format
-#
-# Description:
-#   Validates that a version string follows semantic versioning patterns
-#   and contains only safe characters for kernel version processing.
-#
-# Parameters:
-#   $1: Version string to validate
-#
-# Returns:
-#   Exit 0: Valid version format
-#   Exit 1: Invalid version format
-#
-# Examples:
-#   validate_version "6.8.12-2" && echo "Valid version"
-##
-validate_version() {
-    local version="$1"
-    
-    if [[ -z "$version" ]]; then
-        return 1
-    fi
-    
-    # Allow version format: X.Y.Z or X.Y.Z-N (require at least X.Y.Z)
-    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]; then
-        return 1
-    fi
-    
-    return 0
-}
 
 ##
 # confirm_action - Community standard user confirmation dialog
