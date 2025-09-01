@@ -1,0 +1,122 @@
+schema: 1
+story: "1.1"
+story_title: "Community Standards Compliance"
+gate: FAIL
+status_reason: "Critical architecture violations in interactive menu system implementation create inconsistent user experience across community tools"
+reviewer: "Claude Code (Architecture Review)"
+updated: "2025-09-01T00:00:00Z"
+
+waiver: { active: false }
+
+top_issues:
+  - issue: "PROHIBITED custom while-loop menu pattern used instead of required bash select statement"
+    severity: critical
+    impact: "Violates mandatory community UX/UI standards defined in docs/architecture/coding-standards.md lines 277-307"
+    location: "tools/pve/t2mac-manager.sh:1042-1189"
+  
+  - issue: "Recursive menu calls instead of clean exit after selection"
+    severity: critical  
+    impact: "Creates infinite loop potential and memory accumulation, violating community resource management standards"
+    location: "tools/pve/t2mac-manager.sh:1188"
+    
+  - issue: "Manual option display instead of select auto-numbering"
+    severity: high
+    impact: "Inconsistent with community standardized menu presentation, creating user confusion across tools"
+    location: "tools/pve/t2mac-manager.sh:1061-1067"
+    
+  - issue: "Non-standard input validation vs built-in select error handling"
+    severity: high
+    impact: "Custom validation logic duplicates and conflicts with bash select built-in error handling"
+    location: "tools/pve/t2mac-manager.sh:1072-1077"
+
+risk_summary:
+  totals: { critical: 2, high: 2, medium: 0, low: 0 }
+  recommendations:
+    must_fix:
+      - "Replace custom while-loop menu with mandatory bash select statement pattern"
+      - "Remove recursive menu calls, implement clean exit pattern"
+      - "Remove manual option numbering, use select auto-numbering"
+      - "Remove custom input validation, rely on select built-in error handling"
+    monitor:
+      - "Ensure validate_input function exists or remove references"
+
+quality_assessment:
+  - VIOLATION: Uses PROHIBITED custom while-loop menu pattern (lines 1042-1189)
+  - VIOLATION: Implements recursive menu calls creating memory/resource issues
+  - VIOLATION: Manual option display conflicts with community auto-numbering standards
+  - VIOLATION: Custom input validation duplicates select built-in functionality
+  - MISSING: validate_input function referenced but not implemented
+  - COMPLIANT: Community messaging functions (msg_info, msg_ok, msg_error) properly used
+  - COMPLIANT: Error handling patterns follow community standards
+  - COMPLIANT: Function documentation follows community templates
+
+evidence:
+  files_reviewed: 2
+  standards_violations: 4
+  architecture_conflicts: 1
+  trace:
+    coding_standards_ref: "docs/architecture/coding-standards.md:277-307"
+    prohibited_patterns: "docs/architecture/coding-standards.md:362-374" 
+    required_patterns: "docs/architecture/coding-standards.md:281-306"
+
+violations_detail:
+  prohibited_pattern_usage:
+    - pattern: "Custom while-loop menu with recursive calls"
+      location: "show_menu() function lines 1042-1189"
+      standard_violation: "Lines 362-374 explicitly prohibit this pattern"
+      required_alternative: "bash select statement with clean exit (lines 281-306)"
+      
+  architecture_non_compliance:
+    - component: "Interactive Menu System"
+      current_implementation: "Custom while/case/recursive pattern"
+      required_implementation: "PS3 select statement with break after selection"
+      impact: "Creates inconsistent UX across all community tools"
+
+strengths:
+  - Comprehensive hardware detection and validation logic
+  - Robust GitHub API integration with rate limiting and caching
+  - Proper community messaging function usage
+  - Strong error handling and user confirmation patterns
+  - Excellent documentation and help system implementation
+
+recommendations:
+  immediate:
+    - action: "CRITICAL: Replace show_menu() function with community-mandated select pattern"
+      refs: ["docs/architecture/coding-standards.md:281-306"]
+      implementation: "Use PS3 select with options array and break statement"
+    - action: "CRITICAL: Remove recursive menu calls, implement clean program flow"
+      refs: ["docs/architecture/coding-standards.md:304"]
+      implementation: "Exit after selection processing, don't call show_menu recursively"
+    - action: "HIGH: Implement or remove validate_input function references"
+      refs: ["tools/pve/t2mac-manager.sh:517,1072,1150"]
+      implementation: "Either implement missing function or remove validation calls"
+  
+  future:
+    - action: "Consider sub-menu pattern for complex help system"
+      refs: ["docs/architecture/coding-standards.md:310-331"]
+    - action: "Implement whiptail dialogs for multi-select scenarios if needed"
+      refs: ["docs/architecture/coding-standards.md:335-345"]
+
+gate_decision:
+  status: FAIL
+  rationale: |
+    The t2mac-manager.sh implementation contains multiple critical violations of 
+    mandatory community architecture standards specifically related to interactive 
+    menu systems. These violations are explicitly prohibited in the coding standards 
+    document and create inconsistent user experience across community tools.
+    
+    The current implementation uses a custom while-loop with recursive calls, 
+    which directly violates the required bash select statement pattern mandated 
+    for all community tools. This creates both functional and architectural 
+    compliance issues that must be resolved before release.
+    
+  blocking_issues: 4
+  compliance_score: 40/100
+  
+required_actions:
+  - Refactor show_menu() to use mandatory bash select statement pattern
+  - Remove all recursive menu calls and implement clean exit flow
+  - Replace manual option numbering with select auto-numbering
+  - Remove custom input validation in favor of select built-in handling
+  
+release_recommendation: BLOCK

@@ -513,12 +513,6 @@ confirm_action() {
     while true; do
         read -p "$prompt (y/n)? " response
         
-        # Validate input to prevent injection
-        if ! validate_input "$response" 2>/dev/null; then
-            msg_warn "Invalid input. Please enter 'y' for yes or 'n' for no."
-            continue
-        fi
-        
         case "$response" in
             [Yy]|[Yy][Ee][Ss]) 
                 return $EXIT_SUCCESS 
@@ -1058,134 +1052,151 @@ show_menu() {
     echo ""
     
     msg_info "=== MAC PROXMOX MANAGEMENT ==="
-    echo "1) Install/Update T2 Edge Kernel"
-    echo "2) Configure T2 Fan Control"
-    echo "3) Remove T2 Edge Kernel"
-    echo "4) Hardware Diagnostics"
-    echo "h) Help & Documentation"
-    echo "x) Exit"
+    
+    local options=(
+        "Install/Update T2 Edge Kernel"
+        "Configure T2 Fan Control" 
+        "Remove T2 Edge Kernel"
+        "Hardware Diagnostics"
+        "Help & Documentation"
+        "Exit"
+    )
+    
+    PS3="Select an option: "
+    select opt in "${options[@]}"; do
+        case $REPLY in
+            1)
+                # Check if the latest version is already installed before asking for confirmation
+                if is_kernel_up_to_date; then
+                    msg_warn "The latest T2 Edge Kernel appears to be already installed."
+                    msg_info "Current kernel: $KERNEL_ON"
+                    msg_info "Latest kernel: $LATEST_T2_VER"
+                    
+                    if confirm_action "Do you still want to proceed with installation"; then
+                        install_t2_kernel_no_check
+                        if confirm_action "Reboot to apply changes"; then
+                            reboot
+                        fi
+                    fi
+                else
+                    if confirm_action "Install/Update T2 Edge Kernel"; then
+                        install_t2_kernel_no_check
+                        if confirm_action "Reboot to apply changes"; then
+                            reboot
+                        fi
+                    fi
+                fi
+                ;;
+            2)
+                if confirm_action "Configure T2 Fan Control"; then
+                    configure_fan_control
+                fi
+                ;;
+            3)
+                if confirm_action "Remove T2 Edge Kernel"; then
+                    remove_t2_kernel
+                    if confirm_action "Reboot to apply changes"; then
+                        reboot
+                    fi
+                fi
+                ;;
+            4)
+                clear
+                echo "🔧 Hardware Diagnostics Mode"
+                echo "============================="
+                echo ""
+                
+                # Show enhanced hardware detection
+                echo "Running enhanced hardware detection..."
+                echo ""
+                detect_mac_hardware_enhanced
+                echo ""
+                
+                # Show detailed diagnostics
+                show_hardware_diagnostics
+                
+                echo ""
+                msg_info "Press Enter to return to the main menu..."
+                read
+                ;;
+            5)
+                show_help_menu
+                ;;
+            6) 
+                msg_ok "Exiting T2 Mac Manager..."
+                exit $EXIT_SUCCESS
+                ;;
+            *) 
+                echo "Invalid selection. Please try again." 
+                ;;
+        esac
+        break  # Exit after selection, don't loop back automatically
+    done
+}
+
+# Help menu function using community select pattern
+show_help_menu() {
+    clear
+    echo "📖 Help & Documentation"
+    echo "======================="
     echo ""
     
-    read -p "Select an option: " option
+    local help_options=(
+        "Main Help - Overview and system requirements"
+        "Installation Help - T2 kernel installation guide"
+        "Fan Control Help - Fan configuration and troubleshooting"
+        "Hardware Compatibility - Supported devices and detection"
+        "Removal Help - Kernel removal and restoration"
+        "Back to main menu"
+    )
     
-    # Validate user input
-    if ! validate_input "$option" 2>/dev/null; then
-        msg_error "Invalid option. Press Enter to continue."
-        read
-        show_menu
-        return
-    fi
-    
-    case $option in
-        1) 
-            # Check if the latest version is already installed before asking for confirmation
-            if is_kernel_up_to_date; then
-                msg_warn "The latest T2 Edge Kernel appears to be already installed."
-                msg_info "Current kernel: $KERNEL_ON"
-                msg_info "Latest kernel: $LATEST_T2_VER"
-                
-                if confirm_action "Do you still want to proceed with installation"; then
-                    install_t2_kernel_no_check
-                    if confirm_action "Reboot to apply changes"; then
-                        reboot
-                    fi
-                fi
-            else
-                if confirm_action "Install/Update T2 Edge Kernel"; then
-                    install_t2_kernel_no_check
-                    if confirm_action "Reboot to apply changes"; then
-                        reboot
-                    fi
-                fi
-            fi
-            ;;
-        2)
-            if confirm_action "Configure T2 Fan Control"; then
-                configure_fan_control
-            fi
-            ;;
-        3)
-            if confirm_action "Remove T2 Edge Kernel"; then
-                remove_t2_kernel
-                if confirm_action "Reboot to apply changes"; then
-                    reboot
-                fi
-            fi
-            ;;
-        4)
-            clear
-            echo "🔧 Hardware Diagnostics Mode"
-            echo "============================="
-            echo ""
-            
-            # Show enhanced hardware detection
-            echo "Running enhanced hardware detection..."
-            echo ""
-            detect_mac_hardware_enhanced
-            echo ""
-            
-            # Show detailed diagnostics
-            show_hardware_diagnostics
-            
-            echo ""
-            msg_info "Press Enter to return to the main menu..."
-            read
-            ;;
-        h|H)
-            clear
-            echo "📖 Help & Documentation"
-            echo "======================="
-            echo ""
-            echo "Select help topic:"
-            echo "1) Main Help - Overview and system requirements"
-            echo "2) Installation Help - T2 kernel installation guide"
-            echo "3) Fan Control Help - Fan configuration and troubleshooting"
-            echo "4) Hardware Compatibility - Supported devices and detection"
-            echo "5) Removal Help - Kernel removal and restoration"
-            echo "b) Back to main menu"
-            echo ""
-            
-            read -p "Select help topic: " help_option
-            
-            if ! validate_input "$help_option" 2>/dev/null; then
-                msg_error "Invalid option. Press Enter to continue."
+    PS3="Select help topic: "
+    select opt in "${help_options[@]}"; do
+        case $REPLY in
+            1) 
+                clear
+                show_help_main
+                echo ""
+                echo "Press Enter to return to help menu..."
                 read
-                show_menu
-                return
-            fi
-            
-            clear
-            case $help_option in
-                1) show_help_main ;;
-                2) show_help_install ;;
-                3) show_help_fan_control ;;
-                4) show_help_hardware ;;
-                5) show_help_removal ;;
-                b|B) show_menu; return ;;
-                *) 
-                    msg_error "Invalid help option."
-                    echo ""
-                    msg_info "Press Enter to continue..."
-                    read
-                    ;;
-            esac
-            
-            echo ""
-            echo "Press Enter to return to help menu..."
-            read
-            ;;
-        x|X) 
-            msg_ok "Exiting T2 Mac Manager..."
-            exit $EXIT_SUCCESS
-            ;;
-        *)
-            msg_error "Invalid option. Press Enter to continue."
-            read
-            ;;
-    esac
-    
-    # Return to menu after action completes
-    show_menu
+                ;;
+            2) 
+                clear
+                show_help_install
+                echo ""
+                echo "Press Enter to return to help menu..."
+                read
+                ;;
+            3) 
+                clear
+                show_help_fan_control
+                echo ""
+                echo "Press Enter to return to help menu..."
+                read
+                ;;
+            4) 
+                clear
+                show_help_hardware
+                echo ""
+                echo "Press Enter to return to help menu..."
+                read
+                ;;
+            5) 
+                clear
+                show_help_removal
+                echo ""
+                echo "Press Enter to return to help menu..."
+                read
+                ;;
+            6) 
+                return  # Return to main menu
+                ;;
+            *) 
+                echo "Invalid selection. Please try again." 
+                ;;
+        esac
+        break
+    done
 }
 
 # Check if running as root

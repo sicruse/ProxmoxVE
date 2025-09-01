@@ -272,6 +272,107 @@ execute_safe_command() {
 }
 ```
 
+### Interactive Menu Standards
+
+#### Community Menu Pattern Requirements
+
+Based on analysis of existing `tools/pve/` scripts, all interactive menus **MUST** follow the community standard `select` statement pattern:
+
+```bash
+# REQUIRED: Standard community menu implementation
+show_menu() {
+    local options=(
+        "Install/Update T2 Edge Kernel"
+        "Configure T2 Fan Control" 
+        "Remove T2 Edge Kernel"
+        "Hardware Diagnostics"
+        "Help & Documentation"
+        "Exit"
+    )
+    
+    PS3="Select an option: "
+    select opt in "${options[@]}"; do
+        case $REPLY in
+            1) install_kernel_option ;;
+            2) configure_fan_option ;;
+            3) remove_kernel_option ;;
+            4) hardware_diagnostics_option ;;
+            5) help_documentation_option ;;
+            6) exit 0 ;;
+            *) echo "Invalid selection. Please try again." ;;
+        esac
+        break  # Exit after selection, don't loop back automatically
+    done
+}
+```
+
+#### Sub-Menu Pattern for Complex Selections
+```bash
+# Use select for sub-menus as well
+select_container() {
+    local containers=()
+    mapfile -t containers < <(pct list | awk 'NR > 1 {print $1, $3}')
+    
+    if [[ ${#containers[@]} -eq 0 ]]; then
+        msg_error "No containers found"
+        return 1
+    fi
+    
+    PS3="Enter number of container to convert: "
+    select opt in "${containers[@]}"; do
+        if [[ -n "$opt" ]]; then
+            read -r CONTAINER_ID CONTAINER_NAME <<<"$opt"
+            break
+        else
+            echo "Invalid selection. Try again."
+        fi
+    done
+}
+```
+
+#### Alternative Patterns for Specific Use Cases
+
+**Whiptail Dialog (for multi-select only):**
+```bash
+# Reserve whiptail for complex multi-select scenarios
+multi_select_items() {
+    local items=("item1" "Description 1" "OFF"
+                 "item2" "Description 2" "OFF")
+    
+    CHOICES=$(whiptail --title "Title" \
+        --checklist "Select items:" 25 60 13 \
+        "${items[@]}" 3>&2 2>&1 1>&3)
+}
+```
+
+**Simple Read Pattern (for numeric ranges):**
+```bash
+# Only for comma-separated numeric input
+select_range() {
+    echo "Available options:"
+    echo "$available_options" | nl -w 2 -s '. '
+    echo ""
+    read -r -p "Select items (comma-separated, e.g., 1,2): " selected
+    
+    IFS=',' read -r -a selected_indices <<<"$selected"
+}
+```
+
+#### PROHIBITED Patterns
+```bash
+# ❌ PROHIBITED: Custom while loop menus
+show_menu() {
+    while true; do  # Don't use this pattern
+        read -p "Select option: " option
+        case $option in
+            1) action ;;
+            *) echo "Invalid" ;;
+        esac
+        show_menu  # Don't use recursive calls
+    done
+}
+```
+
 ### Documentation Standards
 
 #### Function Documentation

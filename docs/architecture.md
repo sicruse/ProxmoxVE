@@ -313,6 +313,67 @@ msg_error "Root privileges required"
 msg_error "Hardware detection failed"
 ```
 
+#### 4.1.3 Interactive Menu Standards
+
+**Community Interactive Menu Pattern Analysis:**
+
+Based on analysis of existing `tools/pve/` scripts, the community has established **four distinct interactive menu patterns**:
+
+1. **Bash `select` Statement Pattern (RECOMMENDED - Most Common)**
+   - Used in: `pve-privilege-converter.sh`, `container-restore-from-backup.sh`, `core-restore-from-backup.sh`
+   - Native bash feature with built-in error handling
+   - Automatic option numbering and validation
+
+2. **Whiptail Dialog Pattern**
+   - Used in: `lxc-delete.sh`
+   - GUI-like interface for complex selections
+   - Best for multi-select scenarios
+
+3. **Simple Read with Case Pattern**
+   - Used in: `kernel-clean.sh` 
+   - Direct input processing for comma-separated selections
+   - Good for numeric range selections
+
+4. **Custom Menu Loop Pattern (NON-STANDARD)**
+   - Currently used in: `t2mac-manager.sh`
+   - Should be migrated to standard patterns
+
+**REQUIRED: Standard Menu Implementation Pattern:**
+```bash
+# COMMUNITY STANDARD: Bash select statement pattern
+show_menu() {
+    local options=(
+        "Install/Update T2 Edge Kernel"
+        "Configure T2 Fan Control" 
+        "Remove T2 Edge Kernel"
+        "Hardware Diagnostics"
+        "Help & Documentation"
+        "Exit"
+    )
+    
+    PS3="Select an option: "
+    select opt in "${options[@]}"; do
+        case $REPLY in
+            1) install_kernel_option ;;
+            2) configure_fan_option ;;
+            3) remove_kernel_option ;;
+            4) hardware_diagnostics_option ;;
+            5) help_documentation_option ;;
+            6) exit 0 ;;
+            *) echo "Invalid selection. Please try again." ;;
+        esac
+        break  # Exit after selection, don't loop back automatically
+    done
+}
+```
+
+**Implementation Requirements:**
+- Use `select` statement for primary menu interactions
+- Access selections via `$REPLY` variable for numeric options
+- Implement consistent error messaging: "Invalid selection. Please try again."
+- Break after valid selection rather than recursive menu calls
+- Reserve whiptail for complex multi-select scenarios only
+
 ### 4.2 Build System Integration
 
 #### 4.2.1 Build Function Integration
