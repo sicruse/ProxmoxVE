@@ -71,8 +71,9 @@ validate_version() {
         return 1
     fi
     
-    # Allow version format: X.Y.Z or X.Y.Z-N (require at least X.Y.Z)
-    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]; then
+    # Allow T2 version format: X.Y.Z-N-t2-N (e.g., 6.14.11-1-t2-2)
+    # Also allow standard format: X.Y.Z or X.Y.Z-N
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+(-t2-[0-9]+)?)?$ ]]; then
         return 1
     fi
     
@@ -175,7 +176,7 @@ github_api_get() {
         
         if [ $? -eq 0 ]; then
             http_code=$(echo "$temp_response" | tail -n1)
-            response=$(echo "$temp_response" | head -n -1)
+            response=$(echo "$temp_response" | sed '$d')
         else
             http_code="000"
             response=""
@@ -259,7 +260,7 @@ get_latest_t2_version() {
     
     # Parse version from JSON response
     local latest_version
-    latest_version=$(echo "$api_response" | grep '"tag_name"' | cut -d '"' -f 4 | sed 's/^v//')
+    latest_version=$(echo "$api_response" | grep -o '"tag_name":"[^"]*"' | cut -d '"' -f 4 | sed 's/^v//')
     
     if [ -z "$latest_version" ]; then
         msg_error "Unable to parse version information from GitHub API"
@@ -483,6 +484,47 @@ if [ $? -ne 0 ]; then
     msg_warn "Could not fetch latest version, using fallback"
     LATEST_T2_VER="unknown"
 fi
+
+##
+# is_kernel_up_to_date - Check if current kernel is up to date
+#
+# Description:
+#   Compares current kernel version with latest available T2 kernel version
+#
+# Returns:
+#   Exit 0: Current kernel is up to date
+#   Exit 1: Update available or cannot determine
+##
+is_kernel_up_to_date() {
+    # If we couldn't fetch the latest version, assume update needed
+    if [[ "$LATEST_T2_VER" == "unknown" || -z "$LATEST_T2_VER" ]]; then
+        return 1
+    fi
+    
+    # Check if current kernel contains T2 and matches latest version
+    if echo "$KERNEL_ON" | grep -q "t2" && echo "$KERNEL_ON" | grep -q "$LATEST_T2_VER"; then
+        return 0
+    fi
+    
+    return 1
+}
+
+##
+# command_exists - Check if command exists in PATH
+#
+# Description:
+#   Utility function to check command availability
+#
+# Parameters:
+#   $1: Command name to check
+#
+# Returns:
+#   Exit 0: Command exists
+#   Exit 1: Command not found
+##
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
 
 ##
 # confirm_action - Community standard user confirmation dialog
@@ -1204,6 +1246,42 @@ if [ "$(id -u)" -ne 0 ]; then
     msg_error "This script must be run as root"
     exit $EXIT_PERMISSION_ERROR
 fi
+
+##
+# validate_community_dependencies - Validate required system dependencies
+#
+# Description:
+#   Checks for required system utilities and community framework functions
+#
+# Returns:
+#   Exit 0: All dependencies available
+#   Exit 1: Missing dependencies
+##
+validate_community_dependencies() {
+    local missing_deps=()
+    
+    # Check for essential system utilities
+    local required_commands=("curl" "grep" "cut" "sed" "tail" "head")
+    
+    for cmd in "${required_commands[@]}"; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing_deps+=("$cmd")
+        fi
+    done
+    
+    # Check for community messaging functions
+    if ! declare -f msg_info >/dev/null 2>&1; then
+        missing_deps+=("community messaging functions")
+    fi
+    
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        echo "Missing required dependencies:" >&2
+        printf '  %s\n' "${missing_deps[@]}" >&2
+        return 1
+    fi
+    
+    return 0
+}
 
 # Validate system dependencies
 if ! validate_community_dependencies; then
